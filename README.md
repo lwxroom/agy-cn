@@ -1,4 +1,13 @@
 # agy-cn — Antigravity 轻量级安全中文启动器 (macOS)
+![agy-cn 封面](assets/cover.jpg)
+
+## 界面预览
+
+![自定义背景图与双语界面](assets/bg-preview.jpg)
+
+## 安全架构对比
+
+![传统补丁 vs agy-cn 安全管道](assets/architecture.jpg)
 
 一个极简、完全本地运行的 macOS 启动器，为 Google Antigravity 提供 **中英双语界面** 与 **本地自定义背景图**，不修改原版应用、不破坏签名、不开调试端口、不发起任何网络请求。
 
