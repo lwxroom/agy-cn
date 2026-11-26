@@ -135,6 +135,9 @@ def main():
         return msg_id[0]
 
     def inject(session):
+        if session in injected_sessions:
+            return
+        injected_sessions.add(session)
         send("Runtime.enable", session=session)
         send("Runtime.addBinding", {"name": "__agyCnSaveBg"}, session)
         send("Runtime.evaluate", {"expression": script}, session)
@@ -153,6 +156,7 @@ def main():
     got_any = False
     start = time.time()
     sessions = {}  # sid -> url
+    injected_sessions = set()
     missing = set()
     diag_ids = {}
     next_diag = time.time() + 0.5
@@ -174,7 +178,10 @@ def main():
                                 "expression": "JSON.stringify([...(window.__agyCnMissing||[])])",
                                 "returnByValue": True,
                             }, sid)] = ("M", sid)
-                for sid in list(sessions):
+                for sid, url in list(sessions.items()):
+                    # 已知是外部网页的 session 不再定时执行 Runtime.evaluate（导航回本机时由 Page.frameNavigated 捕获）
+                    if url and url.startswith(("http://", "https://")) and not is_app_url(url):
+                        continue
                     diag_ids[send("Runtime.evaluate", {
                         "expression": "JSON.stringify([location.href, !!window.__agyCnInstalled])",
                         "returnByValue": True,
@@ -216,8 +223,12 @@ def main():
                         try:
                             href, installed = json.loads(val)
                             sessions[sid] = href
-                            if is_app_url(href) and not installed:
-                                inject(sid)
+                            if is_app_url(href):
+                                if installed:
+                                    injected_sessions.add(sid)
+                                else:
+                                    injected_sessions.discard(sid)
+                                    inject(sid)
                         except Exception:
                             pass
                     continue
@@ -228,7 +239,9 @@ def main():
                         log("已保存自定义配置")
                     continue
                 if meth == "Target.detachedFromTarget":
-                    sessions.pop(p.get("sessionId"), None)
+                    sid = p.get("sessionId")
+                    sessions.pop(sid, None)
+                    injected_sessions.discard(sid)
                 elif meth == "Target.attachedToTarget":
                     info = p.get("targetInfo", {})
                     sid = p["sessionId"]
@@ -243,12 +256,15 @@ def main():
                     sid = m["sessionId"]
                     url = p.get("frame", {}).get("url", "")
                     sessions[sid] = url
+                    injected_sessions.discard(sid)
                     if is_app_url(url):
                         inject(sid)
                 elif meth in ("Page.domContentEventFired", "Page.loadEventFired") and m.get("sessionId"):
                     sid = m["sessionId"]
                     if is_app_url(sessions.get(sid, "")):
                         inject(sid)
+    except (BrokenPipeError, OSError):
+        pass
     finally:
         try:
             out.close()

@@ -119,7 +119,9 @@
   const lastTranslated = new WeakMap();
   const translatedTexts = new Set();
   const origAttrs = new WeakMap();
+  const lastTranslatedAttrs = new WeakMap();
   const translatedEls = new Set();
+  const SAFE_DATA_URL = /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/;
 
   function isDarkBg() {
     try {
@@ -139,7 +141,7 @@
   function applyBg() {
     if (!isMainApp || !document.body) return;
     let el = document.getElementById('agycn-bg-layer');
-    if (!bgCfg.dataUrl) {
+    if (!bgCfg.dataUrl || !SAFE_DATA_URL.test(bgCfg.dataUrl)) {
       if (el) el.remove();
       return;
     }
@@ -173,10 +175,12 @@
         }
         const c = document.createElement('canvas');
         c.width = w; c.height = h;
-        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        const ctx = c.getContext('2d');
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0, w, h);
         cb(c.toDataURL('image/jpeg', 0.82));
       };
-      img.onerror = () => cb(reader.result);
+      img.onerror = () => {};
       img.src = reader.result;
     };
     reader.readAsDataURL(file);
@@ -217,6 +221,7 @@
       if (isVert && host.parentElement.children.length >= 2 && host.getBoundingClientRect().width > 300) break;
       host = host.parentElement;
     }
+    if (!host || !host.parentElement) return;
     host.parentElement.insertBefore(card, host);
     const fileInput = card.querySelector('#agycn-bg-file');
     card.querySelector('#agycn-bg-pick').onclick = () => fileInput.click();
@@ -286,15 +291,22 @@
     btn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); setLangMode(!langEnabled); };
     const parent = settingsBtn.parentElement;
     const cs = getComputedStyle(parent);
+    // 严禁把 React 托管的 settingsBtn 移入新容器（reparent），只作为兄弟节点挂载，避免 React 卸载报 NotFoundError
     if (cs.display.includes('flex') && cs.flexDirection !== 'column') {
       parent.appendChild(btn);
+    } else if (parent.children.length === 1) {
+      parent.style.display = 'flex';
+      parent.style.alignItems = 'center';
+      parent.style.gap = '6px';
+      parent.appendChild(btn);
     } else {
-      const wrap = document.createElement('div');
-      wrap.style.cssText = 'display:flex;align-items:center;gap:6px;width:100%';
-      parent.insertBefore(wrap, settingsBtn);
-      wrap.appendChild(settingsBtn);
-      wrap.appendChild(btn);
+      btn.style.margin = '4px 10px';
+      settingsBtn.insertAdjacentElement('afterend', btn);
     }
+  }
+  function pruneDisconnected() {
+    for (const n of translatedTexts) { if (!n.isConnected) translatedTexts.delete(n); }
+    for (const el of translatedEls) { if (!el.isConnected) translatedEls.delete(el); }
   }
   function doText(node) {
     if (!langEnabled || skipped(node.parentElement)) return;
@@ -304,8 +316,9 @@
     const res = lookup(cur);
     if (res !== undefined) {
       const r = label(cur, res);
-      if (!origText.has(node)) origText.set(node, cur);
+      origText.set(node, cur);  // 覆盖写入，兼容 React 复用同一 Text 节点更新文案
       translatedTexts.add(node);
+      if (translatedTexts.size > 1500) pruneDisconnected();
       const lead = cur.match(/^\s*/)[0], tail = cur.match(/\s*$/)[0];
       const next = lead + r + tail;
       lastTranslated.set(node, next);
@@ -316,15 +329,19 @@
     if (!langEnabled || skipped(el)) return;
     for (const a of ATTRS) {
       const v = el.getAttribute(a);
-      if (v) {
-        const res = lookup(v);
-        if (res !== undefined) {
-          let m = origAttrs.get(el);
-          if (!m) { m = {}; origAttrs.set(el, m); }
-          if (!(a in m)) m[a] = v;
-          translatedEls.add(el);
-          el.setAttribute(a, res.text);
-        }
+      if (!v) continue;
+      let lastM = lastTranslatedAttrs.get(el);
+      if (lastM && lastM[a] === v) continue;
+      const res = lookup(v);
+      if (res !== undefined) {
+        let m = origAttrs.get(el);
+        if (!m) { m = {}; origAttrs.set(el, m); }
+        m[a] = v;  // 覆盖写入，兼容 React 更新同一元素的属性值
+        if (!lastM) { lastM = {}; lastTranslatedAttrs.set(el, lastM); }
+        lastM[a] = res.text;
+        translatedEls.add(el);
+        if (translatedEls.size > 1500) pruneDisconnected();
+        el.setAttribute(a, res.text);
       }
     }
   }
@@ -351,6 +368,7 @@
     const themeObs = new MutationObserver(() => { if (bgCfg.dataUrl) applyBg(); });
     themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
     themeObs.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
+    setInterval(pruneDisconnected, 60000);
     let mountTimer = null;
     new MutationObserver(muts => {
       if (langEnabled) {

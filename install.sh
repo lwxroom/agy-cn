@@ -12,7 +12,7 @@ if [ -z "$PY" ]; then
 fi
 mkdir -p "$DEST" "$HOME/Applications" "$HOME/Library/Logs"
 cp "$SRC/launcher.py" "$SRC/overlay.js" "$SRC/zh-CN.json" "$DEST/"
-"$PY" -c "import json;json.load(open('$DEST/zh-CN.json'))"
+"$PY" -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$DEST/zh-CN.json"
 rm -rf "$APP"
 osacompile -o "$APP" -e "do shell script \"nohup '$PY' '$DEST/launcher.py' >>'$LOG' 2>&1 &\""
 ICON="/Applications/Antigravity.app/Contents/Resources/$(defaults read /Applications/Antigravity.app/Contents/Info CFBundleIconFile 2>/dev/null | sed 's/\.icns$//').icns"
