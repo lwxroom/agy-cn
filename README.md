@@ -1,9 +1,8 @@
 # agy-cn — Antigravity 轻量级安全中文启动器 (macOS)
 
+![agy-cn 封面](assets/cover.jpg)
 
 一个极简、完全本地运行的 macOS 启动器，为 Google Antigravity 提供 **中英双语界面** 与 **本地自定义背景图**，不修改原版应用、不破坏签名、不开调试端口、不发起任何网络请求。
-
-![agy-cn 封面](assets/cover.jpg)
 
 ## 界面预览
 
@@ -16,17 +15,17 @@
 ## 特性
 
 - **零侵入、不破坏签名**：不解包 `app.asar`，不改动 `/Applications/Antigravity.app`，官方自动更新后依然可用。
-- **管道模式，不开本地端口**：使用 Chromium `--remote-debugging-pipe` 私有匿名管道注入，不监听任何 TCP 端口，本机其他进程无法接入。
-- **100% 本地离线**：零外部下载、零数据上报、零 `sudo`、零 Node.js 依赖（仅使用 macOS 自带 Python 3）。
-- **中英双语对照**：菜单、按钮、标题等短标签默认显示 `中文 English`（如 `设置 Settings`），长句说明与动态时间/配额提示显示纯中文；自动跳过输入框、代码区与对话正文，避免误翻。
-- **自定义背景图**：在 **「设置 Settings → 外观 Appearance」** 中内置「自定义背景图」卡片，支持本地选图、实时调节透明度与模糊度、切换「整个窗口 / 仅对话区」，配置仅保存于 `~/.agy-cn/bg-config.json`。
+- **管道模式，不开本地端口**：使用 Chromium `--remote-debugging-pipe` 私有匿名管道注入，不监听任何 TCP 端口，本机其他进程无法接入；严格按 URL 白名单仅作用于 Antigravity 主界面，绝不触碰内置浏览器中的外部网页。
+- **100% 本地离线**：零外部下载、零数据上报、零 `sudo`、零 Node.js 依赖（仅使用 Python 3）。
+- **中英双语对照 + 一键切换**：短标签默认显示 `中文 English`（如 `设置 Settings`），长句与动态时间/配额提示显示纯中文；左下角「设置」旁提供 `中/EN` 按钮，无需重启即可在全英文与中英双语之间即时切换。
+- **自定义背景图**：在 **「设置 Settings → 外观 Appearance」** 中内置「自定义背景图」卡片，支持本地选图、实时调节透明度（推荐 5%~20% 以保证代码和截图清晰）与模糊度、切换「整个窗口 / 仅对话区」，配置仅保存于 `~/.agy-cn/bg-config.json`。
 - **细节优化**：自动将设置侧栏的分组标题（`设置`、`项目`、`未归入项目`）弱化为不可点击的小号灰字，避免误触。
 
 ## 环境要求
 
 - macOS
 - 已安装 `/Applications/Antigravity.app`
-- 系统自带 `python3`（无需额外依赖）
+- 已安装 `python3`（可通过 `xcode-select --install` 安装 Xcode Command Line Tools，或使用 Homebrew Python，无需其他第三方依赖）
 
 ## 安装与使用
 

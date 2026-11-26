@@ -55,30 +55,29 @@
     [/^Agent permissions preset selector, current: (.+)$/i, (m) => '智能体权限预设，当前：' + m[1]],
     [/^Skills: ([\d,]+) tokens$/i, (m) => '技能：' + m[1] + ' tokens'],
   ];
-  const missing = window.__agyCnMissing = new Set();
+  const missing = dict.debug ? (window.__agyCnMissing = new Set()) : null;
   function lookup(s) {
     const t = s.trim();
-    if (!t || t.length > 400) return undefined;
+    if (!t || t.length > 400 || !/[A-Za-z]/.test(t)) return undefined;
     // 全小写的词（如技能名 conversations）不做忽略大小写匹配，避免误翻
-    const ident = /^[a-z0-9_-]+$/.test(t);  // 像标识符（技能名、命令名）的全小写词不查词典
+    const ident = /^[a-z0-9_-]+$/.test(t);
     let r = ident ? undefined : (map.get(t) ?? map.get(t.toLowerCase()));
-    if (r !== undefined) return r;
+    if (r !== undefined) return { text: r, dynamic: false };
     for (const [re, fn] of RULES) {
       const m = t.match(re);
-      if (m) { r = fn(m); if (r) return r; }
+      if (m) { r = fn(m); if (r) return { text: r, dynamic: true }; }
     }
-    // 记录未翻译的英文短语，供补充词典
-    if (/^[A-Za-z][A-Za-z0-9 .,'&()/:+-]{1,60}$/.test(t) && missing.size < 2000) missing.add(t);
+    if (missing && /^[A-Za-z][A-Za-z0-9 .,'&()/:+-]{1,60}$/.test(t) && missing.size < 2000) missing.add(t);
     return undefined;
   }
   function skipped(el) {
     return !el || (el.closest && el.closest(SKIP));
   }
-  // 双语模式：短标签（菜单、标题、按钮）显示「中文 English」；长句只显示中文
+  // 双语模式：短标签（菜单、标题、按钮）显示「中文 English」；长句和动态时间/数量只显示中文
   const BILINGUAL = true;
-  function label(src, zh) {
-    const t = src.trim();
-    if (!BILINGUAL || t.length > 32 || /[.?!:]$/.test(t) || /\d/.test(t) || zh === t) return zh;
+  function label(src, res) {
+    const t = src.trim(), zh = res.text;
+    if (!BILINGUAL || res.dynamic || t.length > 32 || /[.?!:]$/.test(t) || /\d/.test(t) || zh === t) return zh;
     return zh + ' ' + t;
   }
   // 设置侧栏里的分组标题：做成不可点的小号灰色标题，避免误点
@@ -104,13 +103,23 @@
       '#agycn-bg-card button{padding:5px 12px;border-radius:8px;border:1px solid rgba(128,128,128,.3);background:transparent;' +
       'color:inherit;cursor:pointer;font-size:12px}#agycn-bg-card button:hover{background:rgba(128,128,128,.12)}' +
       '#agycn-bg-card button.primary{background:#2f75c3;color:#fff;border-color:#2f75c3}' +
-      '#agycn-bg-card input[type=range]{width:140px;vertical-align:middle}';
+      '#agycn-bg-card input[type=range]{width:140px;vertical-align:middle}' +
+      '#agycn-lang-btn{margin-left:auto;padding:2px 8px;border-radius:999px;border:1px solid rgba(128,128,128,.35);' +
+      'background:rgba(128,128,128,.08);color:inherit;font-size:11px;line-height:1.5;cursor:pointer;flex-shrink:0;' +
+      'transition:background .15s,border-color .15s}#agycn-lang-btn:hover{background:rgba(128,128,128,.2)}' +
+      '#agycn-lang-btn[data-mode="en"]{opacity:.75}';
     (document.head || document.documentElement).appendChild(st);
   }
 
-  // 自定义背景图（本地保存，不联网）
-  const isMainApp = typeof location !== 'undefined' && /^https?:\/\/127\.0\.0\.1/.test(location.href);
-  let bgCfg = Object.assign({ dataUrl: '', opacity: 0.18, blur: 0, scope: 'all' }, dict.bg || {});
+  // 自定义背景图 & 语言模式（本地保存，不联网）
+  const isMainApp = typeof location !== 'undefined' && /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//.test(location.href);
+  let bgCfg = Object.assign({ dataUrl: '', opacity: 0.18, blur: 0, scope: 'all', langMode: 'zh' }, dict.bg || {});
+  let langEnabled = bgCfg.langMode !== 'en';
+  const origText = new WeakMap();
+  const lastTranslated = new WeakMap();
+  const translatedTexts = new Set();
+  const origAttrs = new WeakMap();
+  const translatedEls = new Set();
 
   function isDarkBg() {
     try {
@@ -231,21 +240,92 @@
     bl.oninput = () => { bgCfg.blur = Number(bl.value); blv.textContent = bl.value + 'px'; applyBg(); };
     bl.onchange = persistBg;
   }
+  function setLangMode(enable) {
+    langEnabled = !!enable;
+    bgCfg.langMode = langEnabled ? 'zh' : 'en';
+    if (!langEnabled) {
+      for (const n of Array.from(translatedTexts)) {
+        if (!n.isConnected) { translatedTexts.delete(n); continue; }
+        const orig = origText.get(n);
+        if (orig !== undefined) n.nodeValue = orig;
+      }
+      for (const el of Array.from(translatedEls)) {
+        if (!el.isConnected) { translatedEls.delete(el); continue; }
+        const mapA = origAttrs.get(el);
+        if (mapA) for (const [k, v] of Object.entries(mapA)) el.setAttribute(k, v);
+      }
+      document.querySelectorAll('.agycn-heading').forEach(e => e.classList.remove('agycn-heading'));
+    } else if (document.body) {
+      walk(document.body);
+    }
+    const btn = document.getElementById('agycn-lang-btn');
+    if (btn) {
+      btn.dataset.mode = bgCfg.langMode;
+      btn.textContent = langEnabled ? '中/EN' : 'EN';
+      btn.title = langEnabled ? '点击切换为全英文界面' : '点击切换为中英双语界面';
+    }
+    persistBg();
+  }
+  function mountLangToggle() {
+    if (!isMainApp || document.getElementById('agycn-lang-btn') || !document.body) return;
+    // 找到主界面左下角的「设置 Settings」按钮（排除设置弹窗内部的文字）
+    const candidates = Array.from(document.querySelectorAll('button,a,[role="button"]')).filter(el => {
+      if (el.closest('[role="dialog"],[class*="modal"],[class*="dialog"]')) return false;
+      const t = (el.textContent || '').trim();
+      return t === 'Settings' || t === '设置 Settings' || t === '设置';
+    });
+    const settingsBtn = candidates[candidates.length - 1];
+    if (!settingsBtn || !settingsBtn.parentElement) return;
+    const btn = document.createElement('button');
+    btn.id = 'agycn-lang-btn';
+    btn.type = 'button';
+    btn.setAttribute('data-agycn-skip', '1');
+    btn.dataset.mode = bgCfg.langMode;
+    btn.textContent = langEnabled ? '中/EN' : 'EN';
+    btn.title = langEnabled ? '点击切换为全英文界面' : '点击切换为中英双语界面';
+    btn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); setLangMode(!langEnabled); };
+    const parent = settingsBtn.parentElement;
+    const cs = getComputedStyle(parent);
+    if (cs.display.includes('flex') && cs.flexDirection !== 'column') {
+      parent.appendChild(btn);
+    } else {
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'display:flex;align-items:center;gap:6px;width:100%';
+      parent.insertBefore(wrap, settingsBtn);
+      wrap.appendChild(settingsBtn);
+      wrap.appendChild(btn);
+    }
+  }
   function doText(node) {
-    if (skipped(node.parentElement)) return;
+    if (!langEnabled || skipped(node.parentElement)) return;
+    const cur = node.nodeValue;
+    if (!cur || lastTranslated.get(node) === cur) return;
     styleHeading(node);
-    let r = lookup(node.nodeValue);
-    if (r !== undefined) r = label(node.nodeValue, r);
-    if (r !== undefined) {
-      const lead = node.nodeValue.match(/^\s*/)[0], tail = node.nodeValue.match(/\s*$/)[0];
-      node.nodeValue = lead + r + tail;
+    const res = lookup(cur);
+    if (res !== undefined) {
+      const r = label(cur, res);
+      if (!origText.has(node)) origText.set(node, cur);
+      translatedTexts.add(node);
+      const lead = cur.match(/^\s*/)[0], tail = cur.match(/\s*$/)[0];
+      const next = lead + r + tail;
+      lastTranslated.set(node, next);
+      node.nodeValue = next;
     }
   }
   function doEl(el) {
-    if (skipped(el)) return;
+    if (!langEnabled || skipped(el)) return;
     for (const a of ATTRS) {
       const v = el.getAttribute(a);
-      if (v) { const r = lookup(v); if (r !== undefined) el.setAttribute(a, r); }
+      if (v) {
+        const res = lookup(v);
+        if (res !== undefined) {
+          let m = origAttrs.get(el);
+          if (!m) { m = {}; origAttrs.set(el, m); }
+          if (!(a in m)) m[a] = v;
+          translatedEls.add(el);
+          el.setAttribute(a, res.text);
+        }
+      }
     }
   }
   function walk(root) {
@@ -257,17 +337,34 @@
     while ((n = w.nextNode())) n.nodeType === 3 ? doText(n) : doEl(n);
   }
   function start() {
-    walk(document.body);
+    if (langEnabled) walk(document.body);
     applyBg();
     mountBgCard();
-    let bgTimer = null;
+    mountLangToggle();
+    // 仅在窗口尺寸变化或主题切换时刷新背景，避免流式回复期间高频重排
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+      if (!bgCfg.dataUrl) return;
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(applyBg, 150);
+    });
+    const themeObs = new MutationObserver(() => { if (bgCfg.dataUrl) applyBg(); });
+    themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
+    themeObs.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
+    let mountTimer = null;
     new MutationObserver(muts => {
-      for (const m of muts) {
-        if (m.type === 'characterData') doText(m.target);
-        else if (m.type === 'attributes') doEl(m.target);
-        else m.addedNodes.forEach(walk);
+      if (langEnabled) {
+        for (const m of muts) {
+          if (m.type === 'characterData') doText(m.target);
+          else if (m.type === 'attributes') doEl(m.target);
+          else m.addedNodes.forEach(walk);
+        }
       }
-      if (!bgTimer) bgTimer = setTimeout(() => { bgTimer = null; mountBgCard(); applyBg(); }, 200);
+      if (!mountTimer) mountTimer = setTimeout(() => {
+        mountTimer = null;
+        if (!document.getElementById('agycn-lang-btn')) mountLangToggle();
+        if (!document.getElementById('agycn-bg-card') && document.querySelector('[role="dialog"],[class*="modal"],[class*="dialog"]')) mountBgCard();
+      }, 250);
     }).observe(document.body, { childList: true, subtree: true, characterData: true,
       attributes: true, attributeFilter: ATTRS });
   }
