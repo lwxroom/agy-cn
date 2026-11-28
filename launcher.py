@@ -164,10 +164,22 @@ def main():
     start = time.time()
     sessions = {}  # sid -> url
     injected_sessions = set()
+    err_counts = {}  # sid -> 连续错误次数
     missing = set()
     diag_ids = {}
     next_diag = time.time() + 0.5
     diag_rounds = 0
+
+    def is_fatal_session_error(err):
+        if not isinstance(err, dict):
+            return False
+        code = err.get("code")
+        msg = (err.get("message") or "").lower()
+        # -32001: Session with given id not found；明确目标已关闭才删除 session
+        if code == -32001 or "session with given id not found" in msg or "no target with given id" in msg:
+            return True
+        # -32000 ("Inspected target navigated or closed" / "Execution context was destroyed") 多为跳转瞬态错误，绝不能直接删 session
+        return False
 
     try:
         while True:
@@ -216,8 +228,13 @@ def main():
                 if m.get("id") in diag_ids:
                     kind, sid = diag_ids.pop(m["id"])
                     if "error" in m:
-                        sessions.pop(sid, None)
+                        injected_sessions.discard(sid)
+                        err_counts[sid] = err_counts.get(sid, 0) + 1
+                        if is_fatal_session_error(m["error"]) or err_counts[sid] >= 8:
+                            sessions.pop(sid, None)
+                            err_counts.pop(sid, None)
                         continue
+                    err_counts.pop(sid, None)
                     val = m.get("result", {}).get("result", {}).get("value")
                     if kind == "M" and DEBUG and val:
                         try:
@@ -249,12 +266,14 @@ def main():
                     sid = p.get("sessionId")
                     sessions.pop(sid, None)
                     injected_sessions.discard(sid)
+                    err_counts.pop(sid, None)
                 elif meth == "Target.attachedToTarget":
                     info = p.get("targetInfo", {})
                     sid = p["sessionId"]
                     url = info.get("url", "")
                     if info.get("type") in ("page", "iframe", "webview"):
                         sessions[sid] = url
+                        err_counts.pop(sid, None)
                         send("Target.setAutoAttach", {"autoAttach": True, "waitForDebuggerOnStart": True, "flatten": True}, sid)
                         on_page(sid, url)
                     else:
@@ -264,12 +283,18 @@ def main():
                     url = p.get("frame", {}).get("url", "")
                     sessions[sid] = url
                     injected_sessions.discard(sid)
+                    err_counts.pop(sid, None)
                     if is_app_url(url):
                         inject(sid)
                 elif meth in ("Page.domContentEventFired", "Page.loadEventFired") and m.get("sessionId"):
                     sid = m["sessionId"]
-                    if is_app_url(sessions.get(sid, "")):
-                        inject(sid)
+                    url = sessions.get(sid, "")
+                    # 若尚未记录 URL（初始空白页刚跳转完）或已知是主界面，立即探测 location.href 并补注入
+                    if not url or is_app_url(url):
+                        diag_ids[send("Runtime.evaluate", {
+                            "expression": "JSON.stringify([location.href, !!window.__agyCnInstalled])",
+                            "returnByValue": True,
+                        }, sid)] = ("C", sid)
     except (BrokenPipeError, OSError):
         pass
     finally:
