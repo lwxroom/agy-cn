@@ -791,6 +791,18 @@
     "Yes, and always allow in this conversation": "是，且在本对话中始终允许",
     "Yes, and always allow": "是，且始终允许",
     "(tell the agent what to do instead)": "（告诉智能体改做什么）",
-    "tell the agent what to do instead": "告诉智能体改做什么"
+    "tell the agent what to do instead": "告诉智能体改做什么",
+    "Applies to /btw and messages sent after this turn": "适用于 /btw 及本轮之后发送的消息",
+    "Cancel Sending Message": "取消发送消息",
+    "Collapse queued messages": "折叠排队消息",
+    "Expand message": "展开消息",
+    "Open Automations": "打开自动化",
+    "Open Automations Dashboard": "打开自动化面板",
+    "Queued message sent": "排队消息已发送",
+    "Quote": "引用",
+    "Reset to preset": "重置为预设",
+    "Send Now": "立即发送",
+    "Sends after agent finishes working": "智能体完成工作后发送",
+    "Side Question": "侧边提问"
   }
 }

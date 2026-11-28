@@ -38,7 +38,14 @@ def log(msg):
 
 
 def alert(msg):
-    subprocess.run(["osascript", "-e", 'display alert "Antigravity 中文" message %s' % json.dumps(msg)])
+    # 通过 argv 传参避免 AppleScript 不支持 \uXXXX 转义导致中文弹窗语法错误 (-2741)
+    subprocess.run([
+        "osascript",
+        "-e", "on run argv",
+        "-e", 'display alert "Antigravity 中文" message (item 1 of argv)',
+        "-e", "end run",
+        "--", str(msg),
+    ])
 
 
 def is_running():

@@ -39,6 +39,7 @@
       (m) => { const d = dur(m[2]); return d && '你已使用部分' + (m[1].toLowerCase() === 'weekly' ? '本周' : '5 小时') + '额度，将在 ' + d + '后完全恢复。'; }],
     [/^Thought for (.+)$/i, (m) => { const d = dur(m[1]); return d && '已思考 ' + d; }],
     [/^Thinking for (.+)$/i, (m) => { const d = dur(m[1]); return d && '正在思考 ' + d; }],
+    [/^Still thinking,\s*(.+)$/i, (m) => { const d = dur(m[1]); return d && '仍在思考，已用 ' + d; }],
     [/^Your plan's baseline quota will refresh on (.+?)\. To continue using this model now, enable AI Credit overages\.$/i,
       (m) => '你的套餐基础配额将在 ' + m[1] + ' 刷新。如需立即继续使用此模型，请开启 AI 积分超额抵扣。'],
     [/^Turn (\d+) of (\d+)$/i, (m) => '第 ' + m[1] + ' / ' + m[2] + ' 轮'],
